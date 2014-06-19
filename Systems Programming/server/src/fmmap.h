@@ -12,7 +12,7 @@ struct fileloc {
 typedef struct fileloc fileloc_t;
 
 // Create a new memory mapping in the virtual address space
-// of the calling process         
+// of the calling process
 // location: Remote file to be memory mapped
 // offset:   File offset to memory map (from beginning of file)
 //
