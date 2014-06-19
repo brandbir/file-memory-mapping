@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
 	// Create server socket (AF_INET, SOCK_STREAM)
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd < 0) //fgfgfgfgf
-			{
+	{
 		perror("ERROR opening socket");
 		exit(1);
 	}
