@@ -5,7 +5,7 @@
 
 int main(int argc, char *argv[])
 {
-	// comment
+	// comments
 	// Declare variables
 	int sockfd, newsockfd, portno, clilen;
 	char buffer[256];
