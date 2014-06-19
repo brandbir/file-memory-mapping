@@ -16,7 +16,7 @@ int main(int argc, char *argv[])
     // Make sure that server name and port are available in command line arguments
     if (argc < 3) {
         fprintf(stderr,"usage %s hostname port\n", argv[0]);
-        exit(1);
+        exit(0);
     }
 
     // Get port number
@@ -44,14 +44,14 @@ int main(int argc, char *argv[])
     serv_addr.sin_family = AF_INET;  // Set to AF_INET
     bcopy((char *) server -> h_addr, // Set server address
           (char *) &serv_addr.sin_addr.s_addr,
-          server -> h_length);
+                   server -> h_length);
     serv_addr.sin_port = htons(portno); // Set port (convert to network byte ordering)
 
     // Connect to the server */
     if (connect(sockfd,&serv_addr,sizeof(serv_addr)) < 0)
     {
-        perror("ERROR connecting");
-        exit(1);
+         perror("ERROR connecting");
+         exit(1);
     }
 
     // Ask for a message from the user
@@ -63,8 +63,8 @@ int main(int argc, char *argv[])
     n = write(sockfd,buffer,strlen(buffer));
     if (n < 0)
     {
-        perror("ERROR writing to socket");
-        exit(1);
+         perror("ERROR writing to socket");
+         exit(1);
     }
 
     // Read response from server response
@@ -72,8 +72,8 @@ int main(int argc, char *argv[])
     n = read(sockfd,buffer,255);
     if (n < 0)
     {
-        perror("ERROR reading from socket");
-        exit(1);
+         perror("ERROR reading from socket");
+         exit(1);
     }
     printf("%s\n",buffer);
 
