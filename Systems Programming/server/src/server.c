@@ -11,6 +11,7 @@ int main(int argc, char *argv[])
 	// Declare variables
 	int listen_fd, client_conn;
 	struct sockaddr_in serv_addr;
+	char file_name[255];
 
 	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -39,43 +40,50 @@ int main(int argc, char *argv[])
 
 	while(1)
 	{
-		printf("%s \n", "Waiting for connections...");
+		printf("%s \n", "\nWaiting for a connection...");
 
 		//Accepting client connection
 		client_conn = accept(listen_fd, (struct sockaddr *) NULL, NULL);
 
 		if (client_conn < 0)
 		{
-			perror("ERROR on accept");
+			perror("Client was not accepted...");
 			exit(1);
 		}
 
-		//Opening the file located on the server
-		FILE *file = fopen("file.txt", "rb");
+		bzero(file_name, 255);
+		int bytes_read = read(client_conn, file_name, 255);
+		if (bytes_read < 0)
+		{
+			perror("No data was read from the client");
+			exit(1);
+		}
+		printf("Opening %s...\n", file_name);
+
+
+		//Opening the file specified by the client
+		FILE *file = fopen(file_name, "rb");
 		if(file == NULL)
 		{
-			printf("File cannot be opened");
-			return 1;
+			printf("File %s cannot be opened...\n", file_name);
+			return -1;
 		}
 
+		printf("Data Transfer\n");
 		while(1)
 		{
 			char buffer[256];
 			bzero(buffer, 256);
 			int bytes_read = fread(buffer, 1, 256, file);
-			printf("Number of bytes read %d \n", bytes_read);
 
 			if(bytes_read > 0)
 			{
-				printf("Sending data to the client\n");
+				printf("Sending %d bytes to the client...\n", bytes_read);
 				write(client_conn, buffer, bytes_read);
 			}
 
 			if(bytes_read < 256)
 			{
-				if(feof(file))
-					printf("End of file\n");
-
 				if(ferror(file))
 					printf("Read Error\n");
 
