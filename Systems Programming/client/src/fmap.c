@@ -8,23 +8,27 @@
 
 void *rmmap(fileloc_t location, off_t offset)
 {
-	char *file_part[200];
+	//Memory allocated for file read from server
+	char *mapped_file = NULL;
+	int map_size = 0;
+
+	//Buffer for contents read from server
 	char buffer[256];
 	struct hostent *server;
 	int bytes_rec;
 	struct sockaddr_in serv_addr;
 
-	// Create a socket point
+	//Opening a socket
 	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
-	// Check for errors
+	//Check for Socket Error
 	if (sockfd < 0)
 	{
 		perror("ERROR opening socket");
 		exit(1);
 	}
 
-	// Get server name
+	//Getting server details
 	server = gethostbyname("127.0.0.1");
 	if (server == NULL )
 	{
@@ -45,22 +49,35 @@ void *rmmap(fileloc_t location, off_t offset)
 		exit(1);
 	}
 
-	//Creating a file to which data will be stored
+	//Creating a file to which data will be stored for testing purposes
 	FILE *file = fopen("read.txt", "w+");
 
 	if(file == NULL)
 		printf("File cannot be opened");
 
-	//Receiving file contents from server
 	bzero(buffer, 257);
-	int mem_count = 0;
-	//set_memory(&memory_map, 5);
-
 	printf("Mapping file to memory...\n");
+
+	//Receiving file contents from server
 	while((bytes_rec = read(sockfd, buffer, 256)) > 0)
 	{
-		file_part[mem_count] = (char *)malloc((bytes_rec) * sizeof(char));
-		strcpy(file_part[mem_count++], buffer);
+		if(mapped_file == NULL)
+		{
+			//Initialising memory for file mapping
+			mapped_file = (char *)malloc(bytes_rec * sizeof(char));
+			strcpy(mapped_file, buffer);
+			map_size += bytes_rec;
+		}
+
+		else
+		{
+			//Reallocating memory to fit the contents of the file
+			mapped_file = (char *)realloc(mapped_file, map_size + bytes_rec);
+			map_size += bytes_rec;
+			strcat(mapped_file, buffer);
+		}
+
+		//Writing contents to file
 		fwrite(buffer, 1, bytes_rec, file);
 		bzero(buffer, 257);
 	}
@@ -71,25 +88,13 @@ void *rmmap(fileloc_t location, off_t offset)
 	}
 	else
 	{
-		int i;
-		for(i = 0; i < mem_count; i++)
-		{
-			printf("%s", file_part[i]);
-		}
-
-		printf("\n_____________________________________________________________________________________________________\n");
-		printf("File Mapping: \n\n");
-		for(i = 0; i < mem_count; i++)
-		{
-			printf("%d) %p\n", i, file_part[i]);
-		}
-
-		printf("_____________________________________________________________________________________________________\n");
+		printf("\nFile Contents: \n");
+		printf("%s\n", mapped_file);
+		printf("\nMemory Address: %p\n", mapped_file);
 	}
 
 	close(sockfd);
-
-	return file_part;
+	return mapped_file;
 }
 
 int rmunmap(void *addr)
