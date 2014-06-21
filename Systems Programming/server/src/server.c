@@ -40,8 +40,10 @@ int main(int argc, char *argv[])
 	while(1)
 	{
 		printf("%s \n", "Waiting for connections...");
+
 		//Accepting client connection
 		client_conn = accept(listen_fd, (struct sockaddr *) NULL, NULL);
+
 		if (client_conn < 0)
 		{
 			perror("ERROR on accept");
@@ -81,7 +83,7 @@ int main(int argc, char *argv[])
 			}
 		}
 
-		//Closing client connection
+		//Closing Client connection
 		close(client_conn);
 	}
 
