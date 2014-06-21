@@ -15,7 +15,7 @@
 
 int main(int argc, char *argv[])
 {
-
+    char *buff = NULL;
 	struct in_addr server_addr;
 	inet_aton(IP, &server_addr);
 	int server_port = htons(PORT);
@@ -45,6 +45,16 @@ int main(int argc, char *argv[])
 
 	//Deallocation of mapped memory
 	rmunmap(address);
+
+    /*ssize_t bytesRead = mread(address, 5, buff, 10);
+    printf("\n These are the number of bytes read : %ji\n", bytesRead);
+
+    ssize_t bytesRead2 = mread(address, 10, buff, 13);
+    printf("\n These are the number of bytes read : %ji\n", bytesRead2);*/
+
+    buff = "Replacing text in memory";
+    ssize_t bytesWritten = mwrite(address, 110, buff, 11);
+    printf("\n These are the number of bytes read : %ji\n", bytesWritten);
 
 	return 0;
 }
