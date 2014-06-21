@@ -5,9 +5,9 @@
 
 // Type definition for remote file location
 struct fileloc {
-    struct in_addr ipaddress; // Remote IP
-    int port;                 // Remote port
-    char *pathname;           // Remote file to be memory mapped
+	struct in_addr ipaddress; // Remote IP
+	int port;                 // Remote port
+	char *pathname;           // Remote file to be memory mapped
 };
 typedef struct fileloc fileloc_t;
 
