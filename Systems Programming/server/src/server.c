@@ -10,6 +10,7 @@ int main(int argc, char *argv[])
 {
 	// Declare variables
 	int listen_fd, client_conn;
+	pid_t pid;
 	struct sockaddr_in serv_addr;
 	char file_name[255];
 
@@ -37,11 +38,10 @@ int main(int argc, char *argv[])
 	// Start listening for the clients, here process will
 	// go in sleep mode and will wait for the incoming connection
 	listen(listen_fd, 5);
+	printf("Process %d is waiting for a connection...\n", getpid());
 
 	while(1)
 	{
-		printf("%s \n", "\nWaiting for a connection...");
-
 		//Accepting client connection
 		client_conn = accept(listen_fd, (struct sockaddr *) NULL, NULL);
 
@@ -51,47 +51,57 @@ int main(int argc, char *argv[])
 			exit(1);
 		}
 
-		bzero(file_name, 255);
-		int bytes_read = read(client_conn, file_name, 255);
-		if (bytes_read < 0)
+
+		if((pid = fork()) == 0)
 		{
-			perror("No data was read from the client");
-			exit(1);
-		}
-		printf("Opening %s...\n", file_name);
+			//Child process closes listening socket
+			close(listen_fd);
+			bzero(file_name, 255);
+			int bytes_read = read(client_conn, file_name, 255);
 
-
-		//Opening the file specified by the client
-		FILE *file = fopen(file_name, "rb");
-		if(file == NULL)
-		{
-			printf("File %s cannot be opened...\n", file_name);
-			return -1;
-		}
-
-		printf("Data Transfer\n");
-		while(1)
-		{
-			char buffer[256];
-			bzero(buffer, 256);
-			int bytes_read = fread(buffer, 1, 256, file);
-
-			if(bytes_read > 0)
+			if (bytes_read < 0)
 			{
-				printf("Sending %d bytes to the client...\n", bytes_read);
-				write(client_conn, buffer, bytes_read);
+				perror("No data was read from the client");
+				exit(1);
+			}
+			printf("\nOpening %s...\n", file_name);
+
+
+			//Opening the file specified by the client
+			FILE *file = fopen(file_name, "rb");
+			if(file == NULL)
+			{
+				printf("File %s cannot be opened...\n", file_name);
+				return -1;
 			}
 
-			if(bytes_read < 256)
+			printf("Data Transfer\n");
+			while(1)
 			{
-				if(ferror(file))
-					printf("Read Error\n");
+				char buffer[256];
+				bzero(buffer, 256);
+				int bytes_read = fread(buffer, 1, 256, file);
 
-				break;
+				if(bytes_read > 0)
+				{
+					printf("  Sending %d bytes to the client...\n", bytes_read);
+					write(client_conn, buffer, bytes_read);
+				}
+
+				if(bytes_read < 256)
+				{
+					if(ferror(file))
+						printf("Read Error\n");
+
+					break;
+				}
 			}
-		}
 
-		//Closing Client connection
+			//Terminating child process and closing socket
+			close(client_conn);
+			exit(0);
+		}
+		//parent process closing socket connection
 		close(client_conn);
 	}
 
