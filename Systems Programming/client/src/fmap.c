@@ -73,9 +73,10 @@ void *rmmap(fileloc_t location, off_t offset)
 		{
 			if(mapped_file == NULL)
 			{
+
 				//Initialising memory for file mapping
 				mapped_file = (char *)malloc((bytes_rec) * sizeof(char));
-				memmove (buffer, buffer + offset, strlen(buffer+1));
+				memmove (buffer, buffer + offset, strlen(buffer + 1));
 				strcpy(mapped_file, buffer);
 				map_size += bytes_rec;
 			}

@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
 	 * This points to an array, in which it contains a sequential list
 	 * of pointers to file chucks that are currently grouped in [256 bytes]
 	 */
-	void *address = rmmap(location, 500);
+	void *address = rmmap(location, 0);
 
 	if (address == (void*) -1)
 	{
@@ -44,16 +44,16 @@ int main(int argc, char *argv[])
 	}
 
 	//Deallocation of mapped memory
-	rmunmap(address);
+	//rmunmap(address);
 
-    /*ssize_t bytesRead = mread(address, 5, buff, 10);
-    printf("\n These are the number of bytes read : %ji\n", bytesRead);
+	/*ssize_t bytesRead = mread(address, 5, buff, 10);
+	printf("\n These are the number of bytes read : %ji\n", bytesRead);*/
 
-    ssize_t bytesRead2 = mread(address, 10, buff, 13);
+    /*ssize_t bytesRead2 = mread(address, 10, buff, 13);
     printf("\n These are the number of bytes read : %ji\n", bytesRead2);*/
 
     buff = "Replacing text in memory";
-    ssize_t bytesWritten = mwrite(address, 110, buff, 11);
+    ssize_t bytesWritten = mwrite(address, 1018, buff, 9);
     printf("\n These are the number of bytes read : %ji\n", bytesWritten);
 
 	return 0;//
