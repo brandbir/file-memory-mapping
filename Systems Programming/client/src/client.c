@@ -30,13 +30,21 @@ int main(int argc, char *argv[])
 	 * This points to an array, in which it contains a sequential list
 	 * of pointers to file chucks that are currently grouped in [256 bytes]
 	 */
-	void *address = rmmap(location, 0);
+	void *address = rmmap(location, 500);
 
 	if (address == (void*) -1)
 	{
-		printf("File was not mapped correctly\n");
+		printf("File was not mapped correctly...\n");
 		exit(-1);
 	}
+	else
+	{
+		printf("\nFile contents: \n");
+		printf("%s\n\n", (char *)address);
+	}
+
+	//Deallocation of mapped memory
+	rmunmap(address);
 
 	return 0;
 }

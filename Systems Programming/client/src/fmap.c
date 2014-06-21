@@ -29,10 +29,10 @@ void *rmmap(fileloc_t location, off_t offset)
 	}
 
 	//Getting server details
-	server = gethostbyname("127.0.0.1");
+	server = gethostbyaddr(&location.ipaddress, sizeof(location.ipaddress), AF_INET);
 	if (server == NULL )
 	{
-		fprintf(stderr, "ERROR, no such host\n");
+		fprintf(stderr, "Authentication failed...\n");
 		exit(0);
 	}
 
@@ -49,6 +49,14 @@ void *rmmap(fileloc_t location, off_t offset)
 		exit(1);
 	}
 
+	//Sending the file_path to be mapped
+	int bytes_written = write(sockfd, location.pathname, strlen(location.pathname));
+	if (bytes_written < 0)
+	{
+		perror("File path was not successfully sent to the server...");
+		exit(1);
+	}
+
 	//Creating a file to which data will be stored for testing purposes
 	FILE *file = fopen("read.txt", "w+");
 
@@ -61,36 +69,40 @@ void *rmmap(fileloc_t location, off_t offset)
 	//Receiving file contents from server
 	while((bytes_rec = read(sockfd, buffer, 256)) > 0)
 	{
-		if(mapped_file == NULL)
+		if(offset <= bytes_rec)
 		{
-			//Initialising memory for file mapping
-			mapped_file = (char *)malloc(bytes_rec * sizeof(char));
-			strcpy(mapped_file, buffer);
-			map_size += bytes_rec;
-		}
+			if(mapped_file == NULL)
+			{
+				//Initialising memory for file mapping
+				mapped_file = (char *)malloc((bytes_rec) * sizeof(char));
+				memmove (buffer, buffer + offset, strlen(buffer+1));
+				strcpy(mapped_file, buffer);
+				map_size += bytes_rec;
+			}
 
+			else
+			{
+				//Reallocating memory to fit the contents of the file
+				mapped_file = (char *)realloc(mapped_file, map_size + bytes_rec);
+				map_size += bytes_rec;
+				strcat(mapped_file, buffer);
+			}
+
+			//Writing contents to file
+			fwrite(buffer, 1, bytes_rec, file);
+		}
 		else
 		{
-			//Reallocating memory to fit the contents of the file
-			mapped_file = (char *)realloc(mapped_file, map_size + bytes_rec);
-			map_size += bytes_rec;
-			strcat(mapped_file, buffer);
+			offset -= bytes_rec;
 		}
 
-		//Writing contents to file
-		fwrite(buffer, 1, bytes_rec, file);
 		bzero(buffer, 257);
 	}
 
-	if(bytes_rec < 0)
+	if(mapped_file == NULL)
 	{
-		printf("Read error");
-	}
-	else
-	{
-		printf("\nFile Contents: \n");
-		printf("%s\n", mapped_file);
-		printf("\nMemory Address: %p\n", mapped_file);
+		printf("Nothing was read from the remote file...\n");
+		mapped_file = (void *)-1;
 	}
 
 	close(sockfd);
@@ -99,7 +111,12 @@ void *rmmap(fileloc_t location, off_t offset)
 
 int rmunmap(void *addr)
 {
-	return -1;
+	if(addr == (void *)-1)
+		return -1;
+	else
+		free(addr);
+
+	return 0;
 }
 
 ssize_t mread(void *addr, off_t offset, void *buff, size_t count)
