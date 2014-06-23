@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <fcntl.h>
 
 int main(int argc, char *argv[])
@@ -117,7 +118,7 @@ int main(int argc, char *argv[])
 			else
 			{
 				//Updating file contents on server
-				FILE *file = fopen("file.txt", "w+");
+				FILE *file = fopen("/Users/andrewcarlsammut/Dropbox/AssignmentSystemsProgramming/server/server/file.txt", "w+");
 
 				if(file == NULL)
 					printf("File cannot be opened");
