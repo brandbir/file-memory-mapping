@@ -65,7 +65,7 @@ void *rmmap(fileloc_t location, off_t offset)
 	}
 
 	//Creating a file to which data will be stored for testing purposes
-	FILE *file = fopen("/Users/andrewcarlsammut/Dropbox/AssignmentSystemsProgramming/client/client/read.txt", "w+");
+	FILE *file = fopen("read.txt", "w+");
 
 	if(file == NULL)
 		printf("File cannot be opened");
@@ -120,7 +120,7 @@ void *rmmap(fileloc_t location, off_t offset)
 	return memory_mapped;
 }
 
-int rmunmap(void *addr, size_t length)
+int rmunmap(void *addr)
 {
 	fileloc_t *m = (fileloc_t *)addr;
 	addr = m->pathname;
@@ -131,7 +131,6 @@ int rmunmap(void *addr, size_t length)
 	else
 	{
 		free(addr);
-
 		return 0;
 	}
 }
@@ -143,86 +142,60 @@ int rmunmap(void *addr, size_t length)
 ssize_t mread(void *addr, off_t offset, void *buff, size_t count)
 {
 
-  
-    buff = (char*)malloc(count * sizeof(char *));
-    //use memcpy to copy contents from address in buf
-    if(memmove(buff,addr+offset,count) < 0) // used memove to handle cases when dst and src may overlap
-    {
-        perror("Cannot Read!");
-    }
+	buff = (char*) malloc(count * sizeof(char *));
+	//use memcpy to copy contents from address in buf
+	if (memmove(buff, addr + offset, count) < 0) // used memove to handle cases when dst and src may overlap
+			{
+		perror("Cannot Read!");
+	}
 
-    printf("\nThese are the contents in buffer : %s\n", buff);
-    //printf("\n these are the contents in address %s\n", addr);
-
-    bzero(buff, count * sizeof(char));
-    printf("\nSize of Buffer %lu\n ", sizeof(*buff) * count);
+	bzero(buff, count * sizeof(char));
+	printf("\nSize of Buffer %lu\n ", sizeof(*buff) * count);
 
 	return count;
 }
 
 
-// Attempt to write up to count bytes to memory mapped area pointed
-// to by addr + offset from buff
-//
-// returns: Number of bytes written to memory mapped area
+/*
+ * 	Attempt to write up to count bytes to memory mapped area pointed to by addr + offset from buff
+ *	returns: Number of bytes written to memory mapped area
+*/
 ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 {
 	//Retrieving the actual memory address of the mapped file
-	fileloc_t *file_mapped = (fileloc_t *)addr;
+	fileloc_t *file_mapped = (fileloc_t *) addr;
 	addr = file_mapped->pathname;
 	struct sockaddr_in serv_addr;
+	int written_mem = count;
+	int mem_size = (int) strlen((char*) addr);
 
+	if (offset > mem_size)
+	{
+		perror("Offset is out of range");
+		written_mem = -1;
+	}
 
-    printf("\nThese are the contents in address :\n%s\n", addr);
-    printf("\nThis the size of the address :\n%lu\n", strlen((char*)addr));
-    int memorySize = (int)strlen((char*)addr);
+	//Overwriting
+	int mem_range;
+	if ((mem_range = offset + count) <= mem_size)
+	{
+		//Overwriting the mapped memory
+		if (memmove(addr + offset, buff, count) == NULL )
+		{
+			perror("Cannot copy the buffer");
+			written_mem = -1;
+		}
+	}
+	else if (mem_range > mem_size)
+	{
+		//Exceeding the memory allocated, therefore we need
+		//to reallocate extra space in order to write new
+		//data in the specified region, including the null terminator
+		addr = (char *) realloc(addr, mem_range + 1);
+		strcpy(addr + offset, buff);
+	}
 
-    if(offset > memorySize)
-    {
-        perror("Offset out of range!");
-    }
-
-    if((offset+count) <= memorySize)  //overwriting
-    {
-        //overwriting the file
-        if(memmove(addr+offset, buff, count) ==NULL) //returns ptr to dest
-        {
-            perror("Cannot copy the buffer");
-        }
-    }
-    else if((offset + count) >memorySize)
-    {
-        int difference = (offset + count) - memorySize;
-        addr = (char *)realloc(addr, difference + memorySize);
-        if(offset == memorySize) //appending to the end of the file
-        {
-            char* substr = (char*)malloc(count);
-            strncpy(substr, buff, count);
-            strcat(addr, substr);
-            printf("\nThese are the contents in address AFTER WRITE :\n%s\n", addr);
-            return count;
-        }
-        else //overwriting + appending!
-        {
-            int remainingSpace = memorySize - offset;
-            printf("\nThese are the contents in buffer :%s\n", buff);
-            if(memcpy(addr + offset, buff, remainingSpace) == NULL) //return ptr to dest
-            {
-                perror("Cannot copy the buffer");
-            }
-            char* substr = (char*)malloc(count- remainingSpace); // strlen((char*)addr) - remainingSpace
-            strncpy(substr, buff + remainingSpace, count - remainingSpace);  //adding last part of string
-            strcat(addr, substr);
-
-           // printf("\nThese are the contents in address AFTER WRITE :\n%s\n", addr);
-           
-        }
-
-    }
-
-    printf("\nThese are the contents in address AFTER WRITE :\n%s\n", addr);
-
-//After writing to memory we need to synchronise with the server
+	//After writing to memory we need to synchronise with the server
 	//Buffer for contents read from server
 	struct hostent *server;
 
@@ -261,13 +234,13 @@ ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 	char * message = (char *)malloc(strlen(updated_memory + 2));
 	strcpy(message, prefix);
 	strcat(message, updated_memory);
-	//sending the updated version to the server
+
+	//Sending the updated version to the server
 	int bytes_written = write(sockfd, message, strlen(message));
 	if (bytes_written < 0)
 	{
-		perror("File was not updated to the server");
+		perror("Mapped file is not going to be updated on the Remote File");
 		exit(1);
 	}
-    
-	return count; 
+	return written_mem;
 }

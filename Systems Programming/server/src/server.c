@@ -92,7 +92,6 @@ int main(int argc, char *argv[])
 					return -1;
 				}
 
-
 				printf("Data Transfer\n");
 
 				while(1)
@@ -118,7 +117,7 @@ int main(int argc, char *argv[])
 			else
 			{
 				//Updating file contents on server
-				FILE *file = fopen("/Users/andrewcarlsammut/Dropbox/AssignmentSystemsProgramming/server/server/file.txt", "w+");
+				FILE *file = fopen("file.txt", "w+");
 
 				if(file == NULL)
 					printf("File cannot be opened");

@@ -11,7 +11,7 @@
 
 #define IP "127.0.0.1"
 #define PORT 5001
-#define FILENAME "/Users/andrewcarlsammut/Dropbox/AssignmentSystemsProgramming/server/server/file.txt"
+#define FILENAME "file.txt"
 
 int main(int argc, char *argv[])
 {
@@ -41,12 +41,13 @@ int main(int argc, char *argv[])
 		printf("%s\n\n", mapped_location->pathname);
 	}
 
-	buff = "Dylan";
-	ssize_t bytes_written = mwrite(address, 0, buff, 5);
-	printf("\n These are the number of bytes written : %ji\n", bytes_written);
+	buff = "Systems Programming Assignment            ";
+	ssize_t bytes_written = mwrite(address, 0, buff, strlen(buff));
+	mapped_location = (fileloc_t *)address;
+	printf("Updated Memory Content:%s\n\n", mapped_location->pathname);
 
 	//Deallocation of mapped memory
-	rmunmap(address, 0);
+	rmunmap(address);
 
 	return 0;
 }
