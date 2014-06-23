@@ -15,21 +15,18 @@
 
 int main(int argc, char *argv[])
 {
-    char *buff = NULL;
+	char *buff = NULL;
 	struct in_addr server_addr;
 	inet_aton(IP, &server_addr);
 	int server_port = htons(PORT);
 
 	fileloc_t location;
+	fileloc_t *mapped_location;
+
 	location.ipaddress = server_addr;
 	location.port = server_port;
 	location.pathname = FILENAME;
 
-	/*
-	 * Returning a pointer to the memory allocated for the file
-	 * This points to an array, in which it contains a sequential list
-	 * of pointers to file chucks that are currently grouped in [256 bytes]
-	 */
 	void *address = rmmap(location, 0);
 
 	if (address == (void*) -1)
@@ -40,21 +37,16 @@ int main(int argc, char *argv[])
 	else
 	{
 		printf("\nFile contents: \n");
-		printf("%s\n\n", (char *)address);
+		mapped_location = (fileloc_t *)address;
+		printf("%s\n\n", mapped_location->pathname);
 	}
 
+	buff = "Dylan";
+	ssize_t bytes_written = mwrite(address, 0, buff, 5);
+	printf("\n These are the number of bytes written : %ji\n", bytes_written);
+
 	//Deallocation of mapped memory
-	//rmunmap(address);
+	rmunmap(address, 0);
 
-	/*ssize_t bytesRead = mread(address, 5, buff, 10);
-	printf("\n These are the number of bytes read : %ji\n", bytesRead);*/
-
-    /*ssize_t bytesRead2 = mread(address, 10, buff, 13);
-    printf("\n These are the number of bytes read : %ji\n", bytesRead2);*/
-
-    buff = "Replacing text in memory";
-    ssize_t bytesWritten = mwrite(address, 1018, buff, 9);
-    printf("\n These are the number of bytes read : %ji\n", bytesWritten);
-
-	return 0;//
-}//
+	return 0;
+}

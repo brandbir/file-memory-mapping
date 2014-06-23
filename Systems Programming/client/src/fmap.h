@@ -25,7 +25,7 @@ void *rmmap(fileloc_t location, off_t offset);
 // length: Length of mapping
 //
 // returns: 0 on success, -1 on failure and errno set appropriately
-int rmunmap(void *addr);
+int rmunmap(void *addr, size_t length);
 
 // Attempt to read up to count bytes from memory mapped area pointed
 // to by addr + offset into buff
