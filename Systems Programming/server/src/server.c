@@ -5,28 +5,42 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 
 int main(int argc, char *argv[])
 {
-	// Declare variables
-	int listen_fd, client_conn;
 	pid_t pid;
+	int buff_size = 256;
+	char buff[buff_size];
+	int listen_fd, client_conn;
 	struct sockaddr_in serv_addr;
-	char file_name[255];
+	int server_port = 5001;
 
 	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 
 	if (listen_fd < 0)
 	{
-		perror("ERROR opening socket");
+		perror("Socket cannot be opened");
 		exit(1);
 	}
+
+	/*Turning off address checking in order to allow port numbers to be
+	reused before the TIME_WAIT. Otherwise it will not be possible to bind
+	in a very short time after the server has been shut down*/
+	int on = 1;
+	int status = setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, (const char *) &on, sizeof(on));
+
+	if (status == -1)
+	{
+		perror("Failed to Reuse Address on Binding");
+	}
+
 
 	// Initialise socket structure
 	bzero((char *) &serv_addr, sizeof(serv_addr));
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = INADDR_ANY; // Accept connections from any address
-	serv_addr.sin_port = htons(5001);
+	serv_addr.sin_port = htons(server_port);
 
 	// Bind the host address
 	if (bind(listen_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
@@ -51,56 +65,72 @@ int main(int argc, char *argv[])
 			exit(1);
 		}
 
-
 		if((pid = fork()) == 0)
 		{
 			//Child process closes listening socket
 			close(listen_fd);
-			bzero(file_name, 255);
-			int bytes_read = read(client_conn, file_name, 255);
+			bzero(buff, buff_size);
+			int bytes_read = read(client_conn, buff, buff_size);
 
 			if (bytes_read < 0)
 			{
 				perror("No data was read from the client");
 				exit(1);
 			}
-			printf("\nOpening %s...\n", file_name);
 
-
-			//Opening the file specified by the client
-			FILE *file = fopen(file_name, "rb");
-			if(file == NULL)
+			if(buff[0] != 'U')
 			{
-				printf("File %s cannot be opened...\n", file_name);
-				return -1;
+				printf("\nOpening %s...\n", buff);
+
+				//Opening the file specified by the client
+				FILE *file = fopen(buff, "rb");
+
+				if(file == NULL)
+				{
+					printf("File %s cannot be opened...\n", buff);
+					return -1;
+				}
+
+
+				printf("Data Transfer\n");
+
+				while(1)
+				{
+					char buffer[buff_size];
+					bzero(buffer, buff_size);
+					int bytes_read = fread(buffer, 1, buff_size, file);
+					if(bytes_read > 0)
+					{
+						printf("Sending %d bytes to the client...\n", bytes_read);
+						write(client_conn, buffer, bytes_read);
+					}
+
+					if(bytes_read < buff_size)
+					{
+						if(ferror(file))
+							printf("Read Error\n");
+
+						break;
+					}
+				}
 			}
-
-			printf("Data Transfer\n");
-			while(1)
+			else
 			{
-				char buffer[256];
-				bzero(buffer, 256);
-				int bytes_read = fread(buffer, 1, 256, file);
+				//Updating file contents on server
+				FILE *file = fopen("file.txt", "w+");
 
-				if(bytes_read > 0)
-				{
-					printf("  Sending %d bytes to the client...\n", bytes_read);
-					write(client_conn, buffer, bytes_read);
-				}
+				if(file == NULL)
+					printf("File cannot be opened");
 
-				if(bytes_read < 256)
-				{
-					if(ferror(file))
-						printf("Read Error\n");
+				fwrite(buff + 1, 1, strlen(buff) - 1, file);
 
-					break;
-				}
 			}
 
 			//Terminating child process and closing socket
 			close(client_conn);
 			exit(0);
 		}
+
 		//parent process closing socket connection
 		close(client_conn);
 	}
