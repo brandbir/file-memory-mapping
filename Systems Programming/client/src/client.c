@@ -11,7 +11,7 @@
 
 #define IP "127.0.0.1"
 #define PORT 5001
-#define FILENAME "file.txt"
+#define FILENAME "/Users/andrewcarlsammut/Dropbox/AssignmentSystemsProgramming/server/server/file.txt"
 
 int main(int argc, char *argv[])
 {
