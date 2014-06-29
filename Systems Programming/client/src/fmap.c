@@ -5,18 +5,42 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <string.h>
-#include<fcntl.h>
 #include <errno.h>
-#include <sys/mman.h>
+#include <sys/ipc.h>
+#include <linux/mman.h>
+#include <sys/shm.h>
 
+#include <semaphore.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <pthread.h>
+
+
+
+struct address
+{
+	struct in_addr ipaddress;
+	int port;
+	char *memory_address;
+	int shm_id;
+};
+
+//prototypes
+void *mremap(void *old_address, size_t old_size, size_t new_size, int flags);
+typedef struct address address_t;
+
+//mutex variables for handling synchronisation
+sem_t *mutex;
+char * SEM_NAME = "mtx";
 
 void *rmmap(fileloc_t location, off_t offset)
 {
-	fileloc_t *memory_mapped = (fileloc_t *)malloc(sizeof(fileloc_t));
-
-	//Memory allocated for file read from server
+	address_t *memory_mapped = (address_t *)malloc(sizeof(address_t));
 	char *mapped_file = NULL;
 	int map_size = 0;
+	int sh_mem_id;
+	char *shm;
 
 	//Buffer for contents read from server
 	int buff_size = 256;
@@ -49,7 +73,7 @@ void *rmmap(fileloc_t location, off_t offset)
 	bcopy((char *) server-> h_addr, (char *) &serv_addr.sin_addr.s_addr, server -> h_length);
 	serv_addr.sin_port = location.port;
 
-	// Connect to the server */
+	// Connect to the server
 	if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
 	{
 		perror("Connection Refused");
@@ -64,6 +88,15 @@ void *rmmap(fileloc_t location, off_t offset)
 		exit(1);
 	}
 
+	bzero(buffer, buff_size);
+	int sh_mem_key_size;
+
+	if((sh_mem_key_size = read(sockfd, buffer, buff_size)) < 0)
+		perror("shared memory key was not obtained from the server");
+
+	//converting received key to an integer
+	int key = atoi(buffer);
+
 	//Creating a file to which data will be stored for testing purposes
 	FILE *file = fopen("read.txt", "w+");
 
@@ -76,6 +109,7 @@ void *rmmap(fileloc_t location, off_t offset)
 	//Receiving file contents from server
 	while((bytes_rec = read(sockfd, buffer, buff_size)) > 0)
 	{
+		printf("Data received: %s\n", buffer);
 		if(offset <= bytes_rec)
 		{
 			if(mapped_file == NULL)
@@ -107,31 +141,54 @@ void *rmmap(fileloc_t location, off_t offset)
 		bzero(buffer, buff_size + 1);
 	}
 
-	if(mapped_file == NULL)
-	{
-		printf("Nothing was read from the remote file...\n");
-		mapped_file = (void *)-1;
-	}
+	/*Trying to attach with an already obtained shared memory on the client side.
+	This means that if an other client has already gained access to the shared memory
+	specified by the received key, the current process must attach to this shared memory,
+	otherwise this process needs to get the shared memory segment id and thereafter
+	attach the memory segment*/
 
+	//Creating/Obtaining the segment and set read/write permissions
+	if((sh_mem_id = shmget(key, sizeof(mapped_file), IPC_CREAT | 0666)) < 0)
+		perror("shared memory segment was not allocated");
+
+	printf("Shared Memory id: %d", sh_mem_id);
+	//Attachment of segment with the malloc'd data space
+	if((shm = shmat(sh_mem_id, NULL, 0)) != (void *)-1)
+		strcpy(shm, mapped_file);
+
+	else
+		printf("Nothing was read from the remote file...\n");
+
+	//deallocation of mapped file after allocating
+	//the mapped file into shared memory segment
+	free(mapped_file);
 	close(sockfd);
 	memory_mapped->ipaddress = location.ipaddress;
 	memory_mapped->port = location.port;
-	memory_mapped->pathname = mapped_file;
+	memory_mapped->memory_address = shm;
+	memory_mapped->shm_id = sh_mem_id;
 	return memory_mapped;
 }
 
 int rmunmap(void *addr)
 {
-	fileloc_t *m = (fileloc_t *)addr;
-	addr = m->pathname;
+	struct shmid_ds shm_desc;
+	address_t *address = (address_t *)addr;
+	addr = address->memory_address;
 	if(addr == (void*)-1)
 	{
 		return -1;
 	}
 	else
 	{
-		free(addr);
-		return 0;
+		//removing the shared memory segment until no process is using the shared memory
+		if(shmctl(address->shm_id, IPC_RMID, &shm_desc) == -1)
+			perror("shared memory not destroyed");
+
+		//closing mutex
+		sem_close(mutex);
+		sem_unlink(SEM_NAME);
+		return shmdt(addr);
 	}
 }
 
@@ -163,8 +220,8 @@ ssize_t mread(void *addr, off_t offset, void *buff, size_t count)
 ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 {
 	//Retrieving the actual memory address of the mapped file
-	fileloc_t *file_mapped = (fileloc_t *) addr;
-	addr = file_mapped->pathname;
+	address_t *file_mapped = (address_t *) addr;
+	addr = file_mapped->memory_address;
 	struct sockaddr_in serv_addr;
 	int written_mem = count;
 	int mem_size = (int) strlen((char*) addr);
@@ -180,7 +237,7 @@ ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 	if ((mem_range = offset + count) <= mem_size)
 	{
 		//Overwriting the mapped memory
-		if (memmove(addr + offset, buff, count) == NULL )
+		if (memmove(addr + offset, buff, count) == NULL)
 		{
 			perror("Cannot copy the buffer");
 			written_mem = -1;
@@ -191,8 +248,25 @@ ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 		//Exceeding the memory allocated, therefore we need
 		//to reallocate extra space in order to write new
 		//data in the specified region, including the null terminator
-		addr = (char *) realloc(addr, mem_range + 1);
+
+		//Handling synchronisation for multiple writes by using mutex
+		//in relation with shared memory
+
+		//creating mutex that handles synchronisation between processes
+		//using the same shared memory
+
+		mutex = sem_open(SEM_NAME, O_CREAT, 0644, 1);
+		if(mutex == SEM_FAILED)
+		{
+			perror("Semaphore was not created");
+			sem_unlink(SEM_NAME); //unlink semaphore
+			exit(-1);
+		}
+		sem_wait(mutex);
+		addr = mremap(addr, mem_size, (mem_range + 1), MREMAP_MAYMOVE);
 		strcpy(addr + offset, buff);
+		sem_post(mutex);
+
 	}
 
 	//After writing to memory we need to synchronise with the server
@@ -217,7 +291,7 @@ ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 		exit(0);
 	}
 
-	// Populate serv_addr structure
+	//Populate serv_addr structure
 	bzero((char *) &serv_addr, sizeof(serv_addr));
 	serv_addr.sin_family = AF_INET;
 	bcopy((char *) server-> h_addr, (char *) &serv_addr.sin_addr.s_addr, server -> h_length);
@@ -230,7 +304,8 @@ ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 	}
 
 	char * updated_memory = (char *)addr;
-	char * prefix = "U"; // Informing the server that this is an Update
+	//Informing the server that this is an Update
+	char * prefix = "U";
 	char * message = (char *)malloc(strlen(updated_memory + 2));
 	strcpy(message, prefix);
 	strcat(message, updated_memory);

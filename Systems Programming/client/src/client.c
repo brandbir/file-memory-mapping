@@ -10,11 +10,13 @@
 #include "fmap.h"
 
 #define IP "127.0.0.1"
+
 #define PORT 5001
 #define FILENAME "file.txt"
 
 int main(int argc, char *argv[])
 {
+	printf("Client %d Running\n", getpid());
 	char *buff = NULL;
 	struct in_addr server_addr;
 	inet_aton(IP, &server_addr);
@@ -36,18 +38,20 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		printf("\nFile contents: \n");
+		printf("\nMemory Mapped Contents contents:");
 		mapped_location = (fileloc_t *)address;
 		printf("%s\n\n", mapped_location->pathname);
 	}
 
-	buff = "Systems Programming Assignment            ";
-	ssize_t bytes_written = mwrite(address, 0, buff, strlen(buff));
+	buff = "faty";
+	ssize_t bytes_written = mwrite(address, 1, buff, 4);
 	mapped_location = (fileloc_t *)address;
 	printf("Updated Memory Content:%s\n\n", mapped_location->pathname);
 
 	//Deallocation of mapped memory
+	//
 	rmunmap(address);
+
 
 	return 0;
 }
