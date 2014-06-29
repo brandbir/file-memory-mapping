@@ -7,6 +7,8 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
 
 int main(int argc, char *argv[])
 {
@@ -16,6 +18,7 @@ int main(int argc, char *argv[])
 	int listen_fd, client_conn;
 	struct sockaddr_in serv_addr;
 	int server_port = 5001;
+	char *remote_file = "file.txt";
 
 	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -79,11 +82,29 @@ int main(int argc, char *argv[])
 				exit(1);
 			}
 
-			if(buff[0] != 'U')
+			//Updating file for a write request specified by a client
+			if(buff[0] == 'U')
 			{
-				printf("\nOpening %s...\n", buff);
+				//Updating file contents on server
+				FILE *file = fopen(remote_file, "w+");
+
+				if(file == NULL)
+					printf("File cannot be opened");
+
+				fwrite(buff + 1, 1, strlen(buff) - 1, file);
+			}
+			else
+			{
+				//Obtaining a shared memory key and sending it to the client
+				int sh_mem_key = ftok(remote_file, 1);
+				char buffer[buff_size];
+				bzero(buffer, buff_size);
+				sprintf(buffer, "%d", sh_mem_key);
+				//sending key to the client in order to get a shared memory specified by this key
+				write(client_conn, buffer, strlen(buffer));
 
 				//Opening the file specified by the client
+				printf("\nOpening %s...\n", buff);
 				FILE *file = fopen(buff, "rb");
 
 				if(file == NULL)
@@ -114,18 +135,6 @@ int main(int argc, char *argv[])
 					}
 				}
 			}
-			else
-			{
-				//Updating file contents on server
-				FILE *file = fopen("file.txt", "w+");
-
-				if(file == NULL)
-					printf("File cannot be opened");
-
-				fwrite(buff + 1, 1, strlen(buff) - 1, file);
-
-			}
-
 			//Terminating child process and closing socket
 			close(client_conn);
 			exit(0);
