@@ -38,16 +38,16 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		//printf("\nMemory Mapped Contents:");
+		printf("\nMemory Mapped Contents:");
 		mapped_location = (fileloc_t *)address;
-		//printf("%s\n\n", mapped_location->pathname);
+		printf("%s\n\n", mapped_location->pathname);
 	}
 
-	buff = "Finally!!!";
+	buff = "a";
 	mwrite(address, 0, buff, strlen(buff));
 
 	mapped_location = (fileloc_t *)address;
-	//printf("Updated Memory Content:%s\n\n", mapped_location->pathname);
+	printf("Updated Memory Content:%s\n\n", mapped_location->pathname);
 
 	//Deallocation of mapped memory
 	rmunmap(address);

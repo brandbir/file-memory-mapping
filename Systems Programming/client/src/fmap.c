@@ -27,6 +27,7 @@ struct address
 void *mremap(void *old_address, size_t old_size, size_t new_size, int flags);
 typedef struct address address_t;
 
+//mutex variables for handling synchronisation
 sem_t *mutex;
 char * SEM_NAME = "mtx";
 int sockfd;
@@ -101,7 +102,6 @@ void *rmmap(fileloc_t location, off_t offset)
 		//This means that we need to separate the buffer contents
 		sub_buff = sub_buff + 1; //eliminating the delimiter
 		sub_buff_len = strlen(sub_buff);
-
 	}
 
 	//converting received key to an integer
@@ -114,9 +114,8 @@ void *rmmap(fileloc_t location, off_t offset)
 		key = key / 10;
 		++count;
 	}
-
-	if(sub_buff_len == 1)
-		bzero(buffer, buff_size);
+	if(sub_buff_len == 0)
+		bzero(buffer, buff_size + 1);
 
 	printf("Mapping file to memory...\n");
 
