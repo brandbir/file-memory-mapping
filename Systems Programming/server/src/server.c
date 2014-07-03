@@ -20,6 +20,16 @@ FILE * file_x = NULL;
 	exit(1);
 }*/
 
+typedef struct client
+{
+	int sd; //sock decriptor
+	char *pathname;
+	struct client *nextclient;
+} client;
+
+//prototype
+client* DeleteClient(client* head, int id);
+
 int main(int argc, char *argv[])
 {
 	pid_t pid;
@@ -32,6 +42,17 @@ int main(int argc, char *argv[])
 
 	int bytes_read, fd;
 	struct flock lock;
+
+	//**********************************************
+	client* rootclient;
+	client* traversor;
+	client *traversor2; //for table traversing
+
+	rootclient = (client*) malloc(sizeof(client));
+	rootclient->sd = 0;
+	rootclient->pathname = "";
+	rootclient->nextclient = 0;
+	//*****************************************
 
 	//signal(SIGINT, sig_handler);
 	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -102,6 +123,24 @@ int main(int argc, char *argv[])
 					perror("No data was read from the client");
 					exit(1);
 				}
+				
+				//************************************************************************
+
+				if (buff[0] == 'R')
+				{
+					//deleting client's table entry
+					rootclient = DeleteClient(rootclient, client_conn);
+
+					//printing again
+					printf("\nPrinting List again\n");
+					traversor2 = rootclient;
+					while (traversor2 != NULL) {
+						printf("\nTable: %d   %s\n", traversor2->sd,
+								traversor2->pathname);
+						traversor2 = traversor2->nextclient;
+					}
+				}
+				//************************************************************************
 
 				//Holding a copy of the actual buffer
 				char *buff_cpy = (char *)malloc(strlen(buff) + 1);
@@ -112,11 +151,12 @@ int main(int argc, char *argv[])
 				{
 					int cycles, token_size;
 					char *token;
-					bzero(token, strlen(token) + 1);
+
 					//get the number of cycles we want to perform in order to
 					//write all the contents received by the client
 					if(buff[0] == 'U')
 					{
+						printf("Updating..\n");
 						token = strtok(buff_cpy, "$");
 						token = strtok(NULL, "$");
 						token_size = strlen(token);
@@ -126,6 +166,7 @@ int main(int argc, char *argv[])
 					}
 
 					printf("Updating %s from socket %d\n", remote_file, client_conn);
+
 					//Updating file contents on server
 					if(first_pass)
 						file_x = fopen(remote_file, "w+");
@@ -150,8 +191,10 @@ int main(int argc, char *argv[])
 
 						//removing flags for first pass
 						if(first_pass)
+						{
+							printf("writing in first pass : %s\n", buff);
 							fwrite(buff + (3 + token_size) , sizeof(char), strlen(buff) - (3 + token_size), file_x);
-
+						}
 						else
 							fwrite(buff, sizeof(char), strlen(buff), file_x);
 
@@ -165,6 +208,42 @@ int main(int argc, char *argv[])
 					//printf("Received buffer : %s", buff);
 					//Obtaining a shared memory key and sending it to the client
 					strcpy(remote_file, buff);
+
+					//New code
+					traversor = rootclient;
+					printf("\nThis is the client socket descriptor %d", client_conn);
+
+					if (traversor != 0) //moving the traversor to the end of list
+					{
+						while (traversor->nextclient != 0)
+							traversor = traversor->nextclient;
+					}
+
+					//creates a node at the end of list
+					traversor->nextclient = malloc(sizeof(client));
+					traversor = traversor->nextclient;
+
+					if (traversor == 0)
+					{
+						printf("Out of memory");
+						return 0;
+					}
+
+					//Initialising new memory
+					traversor->sd = client_conn;
+					traversor->pathname = remote_file;
+					traversor->nextclient = 0;
+
+					//printing the list
+					traversor2 = rootclient;
+					while (traversor2 != NULL)
+					{
+						printf("\nTable : %d   %s\n", traversor2->sd, traversor2->pathname);
+						traversor2 = traversor2->nextclient;
+					}
+
+					//**************************************************
+
 					int sh_mem_key = ftok(remote_file, 1);
 					char buffer[buff_size];
 					bzero(buffer, buff_size);
@@ -209,7 +288,30 @@ int main(int argc, char *argv[])
 					fclose(file);
 				}
 				bzero(buff, buff_size);
-				if(update_cycles != 0)
+
+				if(update_cycles == 1)
+				{
+					//updating clients
+					//********************************************************************************
+					//loop through the linked list to find the clients with same file
+					char update[] = "U$";
+					printf("\nThis is the update string ; %s\n", update);
+					traversor2 = rootclient;
+
+					while (traversor2 != NULL)
+					{
+						if (strcmp(traversor2->pathname, remote_file) == 0)
+							printf("\nClients to update : %d   %s\n", traversor2->sd, traversor2->pathname);
+
+						traversor2 = traversor2->nextclient;
+					}
+
+					update_cycles--;
+					//write(client_conn, update, strlen(update));
+					//**************************************************************************************
+				}
+
+				else if(update_cycles != 0)
 				{
 					update_cycles--;
 					first_pass = 0;
@@ -229,4 +331,31 @@ int main(int argc, char *argv[])
 	}
 
 	return 0;
+}
+
+client* DeleteClient(client* head, int socket_desc)
+{
+	//checking if we are at the end of list
+	if (head == NULL)
+		return NULL;
+
+	//checking to see if the current node is one to be deleted
+	if (head->sd == socket_desc)
+	{
+		client* tempNextP = malloc(sizeof(client));
+
+		tempNextP = head->nextclient; //save the next ptr in the node
+		free(head); //deallocating the node
+
+		//return the new pointer to where we called from. i.e
+		// * the pointer call will use to "skip over" the removed node.
+		return tempNextP;
+	}
+
+	//check the rest of the list, fixing the next pointer in tcase the next nose
+	//is the the one removed.
+	head->nextclient = DeleteClient(head->nextclient, socket_desc);
+
+	//return the ptr to where we were called from. since we did not remove this node it will be the same
+	return head;
 }
