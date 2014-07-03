@@ -9,17 +9,31 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/ipc.h>
+#include <signal.h>
+
+FILE * file_x = NULL;
+/*void sig_handler(int sig)
+{
+	printf("Closing any open files\n");
+	printf("%d\n", x);
+	fclose(file_x);
+	exit(1);
+}*/
 
 int main(int argc, char *argv[])
 {
 	pid_t pid;
-	int buff_size = 256;
+	int buff_size = 1024;
 	char buff[buff_size];
 	int listen_fd, client_conn;
 	struct sockaddr_in serv_addr;
 	int server_port = 5001;
-	char *remote_file = "file.txt";
+	char remote_file[255];
 
+	int bytes_read, fd;
+	struct flock lock;
+
+	//signal(SIGINT, sig_handler);
 	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 
 	if (listen_fd < 0)
@@ -58,11 +72,13 @@ int main(int argc, char *argv[])
 	listen(listen_fd, 5);
 	printf("Process %d is waiting for a connection...\n", getpid());
 
+	int client = 0;
 	while(1)
 	{
 		//Accepting client connection
 		client_conn = accept(listen_fd, (struct sockaddr *) NULL, NULL);
-
+		client++;
+		printf("connected clients: %d and connected socket descriptor: %d\n", client, client_conn);
 		if (client_conn < 0)
 		{
 			perror("Client was not accepted...");
@@ -71,73 +87,141 @@ int main(int argc, char *argv[])
 
 		if((pid = fork()) == 0)
 		{
+			int update_cycles = 0;
+			int first_pass = 1;
 			//Child process closes listening socket
 			close(listen_fd);
 			bzero(buff, buff_size);
-			int bytes_read = read(client_conn, buff, buff_size);
 
-			if (bytes_read < 0)
+
+			while((bytes_read = read(client_conn, buff, buff_size)) > 0)
 			{
-				perror("No data was read from the client");
-				exit(1);
-			}
-
-			//Updating file for a write request specified by a client
-			if(buff[0] == 'U')
-			{
-				//Updating file contents on server
-				FILE *file = fopen(remote_file, "w+");
-
-				if(file == NULL)
-					printf("File cannot be opened");
-
-				fwrite(buff + 1, 1, strlen(buff) - 1, file);
-			}
-			else
-			{
-				//Obtaining a shared memory key and sending it to the client
-				int sh_mem_key = ftok(remote_file, 1);
-				char buffer[buff_size];
-				bzero(buffer, buff_size);
-				sprintf(buffer, "%d", sh_mem_key);
-				//sending key to the client in order to get a shared memory specified by this key
-				write(client_conn, buffer, strlen(buffer));
-
-				//Opening the file specified by the client
-				printf("\nOpening %s...\n", buff);
-				FILE *file = fopen(buff, "rb");
-
-				if(file == NULL)
+				//printf("LOOP: Buffer received: %s\n\n\n", buff);
+				if (bytes_read < 0)
 				{
-					printf("File %s cannot be opened...\n", buff);
-					return -1;
+					perror("No data was read from the client");
+					exit(1);
 				}
 
-				printf("Data Transfer\n");
+				//Holding a copy of the actual buffer
+				char *buff_cpy = (char *)malloc(strlen(buff) + 1);
+				strcpy(buff_cpy, buff);
 
-				while(1)
+				//Updating file for a write request specified by a client
+				if(buff[0] == 'U' || update_cycles != 0)
 				{
+					int cycles, token_size;
+					char *token;
+					bzero(token, strlen(token) + 1);
+					//get the number of cycles we want to perform in order to
+					//write all the contents received by the client
+					if(buff[0] == 'U')
+					{
+						token = strtok(buff_cpy, "$");
+						token = strtok(NULL, "$");
+						token_size = strlen(token);
+						cycles = atoi(token);
+						update_cycles = cycles;
+						free(buff_cpy);
+					}
+
+					printf("Updating %s from socket %d\n", remote_file, client_conn);
+					//Updating file contents on server
+					if(first_pass)
+						file_x = fopen(remote_file, "w+");
+
+					else
+						file_x = fopen(remote_file, "a+");
+
+					if(file_x == NULL)
+					{
+						printf("File cannot be opened");
+					}
+
+					else
+					{
+						//Getting file descriptor
+						fd = fileno(file_x);
+						//Initialisation of flock structure
+						memset(&lock, 0, sizeof(lock));
+						lock.l_type = F_WRLCK;
+						//Placing the write lock on the specified file
+						fcntl(fd,F_SETLKW, &lock);
+
+						//removing flags for first pass
+						if(first_pass)
+							fwrite(buff + (3 + token_size) , sizeof(char), strlen(buff) - (3 + token_size), file_x);
+
+						else
+							fwrite(buff, sizeof(char), strlen(buff), file_x);
+
+						lock.l_type = F_UNLCK;
+						fcntl(fd, F_SETLKW, &lock);
+						fclose(file_x);
+					}
+				}
+				else
+				{
+					//printf("Received buffer : %s", buff);
+					//Obtaining a shared memory key and sending it to the client
+					strcpy(remote_file, buff);
+					int sh_mem_key = ftok(remote_file, 1);
 					char buffer[buff_size];
 					bzero(buffer, buff_size);
-					int bytes_read = fread(buffer, 1, buff_size, file);
-					if(bytes_read > 0)
+					sprintf(buffer, "%d", sh_mem_key);
+					strcat(buffer, "$");
+
+					//sending key to the client in order to get a shared memory specified by this key with an '*' as a delimiter
+					write(client_conn, buffer, strlen(buffer));
+
+					//Opening the file specified by the client
+					printf("\nOpening %s...\n\n", remote_file);
+					FILE *file = fopen(remote_file, "rb");
+
+					if(file == NULL)
 					{
-						printf("Sending %d bytes to the client...\n", bytes_read);
-						write(client_conn, buffer, bytes_read);
+						printf("File %s cannot be opened...\n", remote_file);
+						return -1;
 					}
 
-					if(bytes_read < buff_size)
-					{
-						if(ferror(file))
-							printf("Read Error\n");
+					printf("Data Transfer\n");
 
-						break;
+					while(1)
+					{
+						char buffer[buff_size];
+						bzero(buffer, buff_size);
+						int bytes_read = fread(buffer, 1, buff_size, file);
+						if(bytes_read > 0)
+						{
+							printf("Sending %d bytes through socket %d...\n", bytes_read, client_conn);
+							write(client_conn, buffer, bytes_read);
+						}
+
+						if(bytes_read < buff_size)
+						{
+							if(ferror(file))
+								printf("Read Error\n");
+
+							break;
+						}
 					}
+
+					fclose(file);
+				}
+				bzero(buff, buff_size);
+				if(update_cycles != 0)
+				{
+					update_cycles--;
+					first_pass = 0;
 				}
 			}
+
 			//Terminating child process and closing socket
 			close(client_conn);
 			exit(0);
+
+			bzero(buff, buff_size);
+			update_cycles++;
 		}
 
 		//parent process closing socket connection
