@@ -33,25 +33,24 @@ int main(int argc, char *argv[])
 
 	if (address == (void*) -1)
 	{
-		printf("File was not mapped correctly...\n");
+		printf("Nothing was mapped from remote file\n");
 		exit(-1);
 	}
 	else
 	{
-		printf("\nMemory Mapped Contents contents:");
+		//printf("\nMemory Mapped Contents:");
 		mapped_location = (fileloc_t *)address;
-		printf("%s\n\n", mapped_location->pathname);
+		//printf("%s\n\n", mapped_location->pathname);
 	}
 
-	buff = "faty";
-	ssize_t bytes_written = mwrite(address, 1, buff, 4);
+	buff = "Finally!!!";
+	mwrite(address, 0, buff, strlen(buff));
+
 	mapped_location = (fileloc_t *)address;
-	printf("Updated Memory Content:%s\n\n", mapped_location->pathname);
+	//printf("Updated Memory Content:%s\n\n", mapped_location->pathname);
 
 	//Deallocation of mapped memory
-	//
 	rmunmap(address);
-
 
 	return 0;
 }

@@ -9,14 +9,11 @@
 #include <sys/ipc.h>
 #include <linux/mman.h>
 #include <sys/shm.h>
-
 #include <semaphore.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <pthread.h>
-
-
 
 struct address
 {
@@ -30,9 +27,10 @@ struct address
 void *mremap(void *old_address, size_t old_size, size_t new_size, int flags);
 typedef struct address address_t;
 
-//mutex variables for handling synchronisation
 sem_t *mutex;
 char * SEM_NAME = "mtx";
+int sockfd;
+int buff_size = 1024;
 
 void *rmmap(fileloc_t location, off_t offset)
 {
@@ -41,16 +39,16 @@ void *rmmap(fileloc_t location, off_t offset)
 	int map_size = 0;
 	int sh_mem_id;
 	char *shm;
+	int sub_buff_len;
 
 	//Buffer for contents read from server
-	int buff_size = 256;
 	char buffer[buff_size];
 	struct hostent *server;
 	int bytes_rec;
 	struct sockaddr_in serv_addr;
 
 	//Opening a socket
-	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
 	//Check for Socket Error
 	if (sockfd < 0)
@@ -88,33 +86,59 @@ void *rmmap(fileloc_t location, off_t offset)
 		exit(1);
 	}
 
-	bzero(buffer, buff_size);
+	bzero(buffer, buff_size + 1);
 	int sh_mem_key_size;
 
 	if((sh_mem_key_size = read(sockfd, buffer, buff_size)) < 0)
 		perror("shared memory key was not obtained from the server");
 
+	//Finding delimiter after received key number from the server
+	char * sub_buff = strchr(buffer, '$');
+
+	if (sub_buff != NULL)
+	{
+		//found the delimiter between key and file contents
+		//This means that we need to separate the buffer contents
+		sub_buff = sub_buff + 1; //eliminating the delimiter
+		sub_buff_len = strlen(sub_buff);
+
+	}
+
 	//converting received key to an integer
 	int key = atoi(buffer);
+	int count = 0;
 
-	//Creating a file to which data will be stored for testing purposes
-	FILE *file = fopen("read.txt", "w+");
+	//Getting number of digits contained in key
+	while(key != 0)
+	{
+		key = key / 10;
+		++count;
+	}
 
-	if(file == NULL)
-		printf("File cannot be opened");
+	if(sub_buff_len == 1)
+		bzero(buffer, buff_size);
 
-	bzero(buffer, buff_size + 1);
 	printf("Mapping file to memory...\n");
 
+	int flags = fcntl(sockfd, F_GETFL, 0);
+	fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+	sleep(1);
+
 	//Receiving file contents from server
-	while((bytes_rec = read(sockfd, buffer, buff_size)) > 0)
+	while(sub_buff_len > 1 || ((bytes_rec = read(sockfd, buffer, buff_size)) > 0))
 	{
-		printf("Data received: %s\n", buffer);
+		if(sub_buff_len > 1)
+		{
+			//update buffer in order to handle already received file contents
+			memmove (buffer, buffer + (count + 1), strlen(buffer) + (count + 1));
+			bytes_rec = sub_buff_len;
+			sub_buff_len = 0;
+		}
+
 		if(offset <= bytes_rec)
 		{
 			if(mapped_file == NULL)
 			{
-
 				//Initialising memory for file mapping
 				mapped_file = (char *)malloc((bytes_rec) * sizeof(char));
 				memmove (buffer, buffer + offset, strlen(buffer + 1));
@@ -129,9 +153,6 @@ void *rmmap(fileloc_t location, off_t offset)
 				map_size += bytes_rec;
 				strcat(mapped_file, buffer);
 			}
-
-			//Writing contents to file
-			fwrite(buffer, 1, bytes_rec, file);
 		}
 		else
 		{
@@ -147,26 +168,37 @@ void *rmmap(fileloc_t location, off_t offset)
 	otherwise this process needs to get the shared memory segment id and thereafter
 	attach the memory segment*/
 
-	//Creating/Obtaining the segment and set read/write permissions
-	if((sh_mem_id = shmget(key, sizeof(mapped_file), IPC_CREAT | 0666)) < 0)
-		perror("shared memory segment was not allocated");
+	//No memory was allocated for contents that reside in the remote file.
+	//This implies that the remote file is empty
+	if(mapped_file != NULL)
+	{
+		//Creating/Obtaining the segment and set read/write permissions
+		if((sh_mem_id = shmget(key, strlen(mapped_file), IPC_CREAT | 0666)) < 0)
+			perror("shared memory segment was not allocated");
 
-	printf("Shared Memory id: %d", sh_mem_id);
-	//Attachment of segment with the malloc'd data space
-	if((shm = shmat(sh_mem_id, NULL, 0)) != (void *)-1)
-		strcpy(shm, mapped_file);
+		printf("Shared Memory id: %d", sh_mem_id);
+		//Attachment of segment with the malloc'd data space
+		if((shm = shmat(sh_mem_id, NULL, 0)) != (void *)-1)
+		{
+			strcpy(shm, mapped_file);
+		}
 
+		else
+			perror("Shared memory was not attached\n");
+
+		//Deallocation of mapped file after allocating
+		//the mapped file into shared memory segment
+		free(mapped_file);
+		memory_mapped->ipaddress = location.ipaddress;
+		memory_mapped->port = location.port;
+		memory_mapped->memory_address = shm;
+		memory_mapped->shm_id = sh_mem_id;
+	}
 	else
-		printf("Nothing was read from the remote file...\n");
+	{
+		memory_mapped = (void *)-1;
+	}
 
-	//deallocation of mapped file after allocating
-	//the mapped file into shared memory segment
-	free(mapped_file);
-	close(sockfd);
-	memory_mapped->ipaddress = location.ipaddress;
-	memory_mapped->port = location.port;
-	memory_mapped->memory_address = shm;
-	memory_mapped->shm_id = sh_mem_id;
 	return memory_mapped;
 }
 
@@ -188,6 +220,7 @@ int rmunmap(void *addr)
 		//closing mutex
 		sem_close(mutex);
 		sem_unlink(SEM_NAME);
+		close(sockfd);
 		return shmdt(addr);
 	}
 }
@@ -202,7 +235,7 @@ ssize_t mread(void *addr, off_t offset, void *buff, size_t count)
 	buff = (char*) malloc(count * sizeof(char *));
 	//use memcpy to copy contents from address in buf
 	if (memmove(buff, addr + offset, count) < 0) // used memove to handle cases when dst and src may overlap
-			{
+	{
 		perror("Cannot Read!");
 	}
 
@@ -211,7 +244,6 @@ ssize_t mread(void *addr, off_t offset, void *buff, size_t count)
 
 	return count;
 }
-
 
 /*
  * 	Attempt to write up to count bytes to memory mapped area pointed to by addr + offset from buff
@@ -222,7 +254,7 @@ ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 	//Retrieving the actual memory address of the mapped file
 	address_t *file_mapped = (address_t *) addr;
 	addr = file_mapped->memory_address;
-	struct sockaddr_in serv_addr;
+	//struct sockaddr_in serv_addr;
 	int written_mem = count;
 	int mem_size = (int) strlen((char*) addr);
 
@@ -271,46 +303,29 @@ ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 
 	//After writing to memory we need to synchronise with the server
 	//Buffer for contents read from server
-	struct hostent *server;
 
-	//Opening a socket
-	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	//Updated Memory + U (for Update) and a digit to
+	//show how many times the server needs to traverse
+	//the buffer, in the case when it exceeds the buffer size
 
-	//Check for Socket Error
-	if (sockfd < 0)
-	{
-		perror("Socket cannot be opened");
-		exit(1);
-	}
-
-	//Getting server details
-	server = gethostbyaddr(&file_mapped->ipaddress, sizeof(file_mapped->ipaddress), AF_INET);
-	if (server == NULL )
-	{
-		fprintf(stderr, "Server Authentication failed\n");
-		exit(0);
-	}
-
-	//Populate serv_addr structure
-	bzero((char *) &serv_addr, sizeof(serv_addr));
-	serv_addr.sin_family = AF_INET;
-	bcopy((char *) server-> h_addr, (char *) &serv_addr.sin_addr.s_addr, server -> h_length);
-	serv_addr.sin_port = file_mapped->port;
-
-	if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
-	{
-		perror("Connection Refused");
-		exit(1);
-	}
-
+	int message_size = strlen(addr) + 2;
+	char cycles[10];
+	int num_of_cycles = (message_size + buff_size - 1) / buff_size;
+	sprintf(cycles, "%d", num_of_cycles);
 	char * updated_memory = (char *)addr;
 	//Informing the server that this is an Update
-	char * prefix = "U";
-	char * message = (char *)malloc(strlen(updated_memory + 2));
+
+	//Allocating memory for the prefix (U + 2 $ symbols and number of cycles)
+	char *prefix = (char *)malloc(sizeof(char) * (3 + strlen(cycles)));
+	strcpy(prefix, "U$");
+	strcat(prefix, cycles);
+	strcat(prefix, "$");
+	char * message = (char *)malloc(strlen(updated_memory + 3));
 	strcpy(message, prefix);
 	strcat(message, updated_memory);
 
 	//Sending the updated version to the server
+	//printf("\nMessage to be sent: %s\n\n\n", message);
 	int bytes_written = write(sockfd, message, strlen(message));
 	if (bytes_written < 0)
 	{
