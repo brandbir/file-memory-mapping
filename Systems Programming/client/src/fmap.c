@@ -34,6 +34,7 @@ char * SEM_NAME = "mtx";
 int sockfd;
 int buff_size = 1024;
 
+
 void *rmmap(fileloc_t location, off_t offset)
 {
 	address_t *memory_mapped = (address_t *)malloc(sizeof(address_t));
