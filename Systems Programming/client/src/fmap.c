@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sys/ioctl.h>
 
 struct address
 {
@@ -331,5 +332,10 @@ ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 		perror("Mapped file is not going to be updated on the Remote File");
 		exit(1);
 	}
+
+	char code[7] = "       ";
+	sleep(1);
+	int bytes_read = read(sockfd, code, strlen(code));
+	printf("Buffer read after mwrite : %s\n", code);
 	return written_mem;
 }

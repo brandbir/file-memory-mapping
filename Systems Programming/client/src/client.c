@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
 		printf("%s\n\n", mapped_location->pathname);
 	}
 
-	buff = "a";
+	buff = "b";
 	mwrite(address, 0, buff, strlen(buff));
 
 	mapped_location = (fileloc_t *)address;
