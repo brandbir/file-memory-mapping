@@ -13,11 +13,12 @@
 #include <sys/mman.h>
 #include <sys/shm.h>
 #include <linux/mman.h>
-
-
+#include <sys/wait.h>
+#include <assert.h>
 
 FILE * file_x = NULL;
 char * SHMNAME = "shm";
+int MAX_CLIENTS = 100;
 
 int client_conn;
 void sig_handler(int sig)
@@ -29,15 +30,14 @@ void sig_handler(int sig)
 
 typedef struct client
 {
-	int pid; //pid
+	int * pid;
 	char *pathname;
 	struct client *nextclient;
 } client;
 
 //prototype
 client* DeleteClient(client* head, int id);
-void *mremap(void *old_address, size_t old_size, size_t new_size, int flags);
-
+char** splitting(char* a_str, const char a_delim);
 
 int main(int argc, char *argv[])
 {
@@ -49,55 +49,13 @@ int main(int argc, char *argv[])
 	int server_port = 5001;
 	char remote_file[255];
 
-	int bytes_read, fd, table_count = 1;
+	int bytes_read, fd;
 	struct flock lock;
 
+	int * table_count = mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+	char *pids_mem = mmap(NULL, 10 * sizeof(char), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 
-	//**********************************************
-	static client* rootclient;
-	client* traversor;
-
-	shm_unlink("shm");
-	int shmfd = shm_open(SHMNAME,O_RDWR,0755);
-	if (shmfd < 0)
-	{
-		if (errno == 2)
-		{
-			shmfd = shm_open(SHMNAME, O_CREAT | O_RDWR, 0755);
-			if (shmfd < 0)
-			{
-				perror("Failure in shm_open()");
-				fprintf(stderr, "Error: %d\n", errno);
-				exit(EXIT_FAILURE);
-			}
-		}
-		else
-		{
-			perror("Failure in shm_open()");
-			fprintf(stderr, "Error: %d\n", errno);
-			exit(EXIT_FAILURE);
-		}
-	}
-	if(shmfd == -1)
-	{
-		perror("Failed to map shared memory");
-		return 0;
-	}
-
-	ftruncate(shmfd, sizeof(client));
-	rootclient = mmap(NULL, sizeof(client), PROT_READ | PROT_WRITE, MAP_SHARED ,shmfd , 0);
-
-	if(rootclient == MAP_FAILED)
-	{
-		printf("MMap failed xbiiijn\n");
-	}
-	client *traversor2; //for table traversing
-
-	rootclient = (client*) malloc(sizeof(client));
-	rootclient->pid = 0;
-	rootclient->pathname = "";
-	rootclient->nextclient = 0;
-	//*****************************************
+	*table_count = 1;
 
 	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -132,24 +90,18 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	// Start listening for the clients, here process will
+	// Start listening for theait clients, here process will
 	// go in sleep mode and will wait for the incoming connection
 	listen(listen_fd, 5);
 	printf("Process %d is waiting for a connection...\n", getpid());
 
 	int client = 0;
+	int childstate;
+
 	while(1)
 	{
 		//Accepting client connection
 		client_conn = accept(listen_fd, (struct sockaddr *) NULL, NULL);
-
-		printf("\nPrinting the list Parent!!! where count is : %d\n", table_count);
-		traversor2 = rootclient;
-		while (traversor2 != NULL)
-		{
-			printf("\nTable : %d   %s\n", traversor2->pid, traversor2->pathname);
-			traversor2 = traversor2->nextclient;
-		}
 		client++;
 		printf("connected clients: %d and connected socket descriptor: %d\n", client, client_conn);
 		if (client_conn < 0)
@@ -167,7 +119,6 @@ int main(int argc, char *argv[])
 			close(listen_fd);
 			bzero(buff, buff_size);
 
-
 			while((bytes_read = read(client_conn, buff, buff_size)) > 0)
 			{
 				//printf("LOOP: Buffer received: %s\n\n\n", buff);
@@ -182,16 +133,6 @@ int main(int argc, char *argv[])
 				if (buff[0] == 'R')
 				{
 					//deleting client's table entry
-					rootclient = DeleteClient(rootclient, client_conn);
-
-					//printing again
-					printf("\nPrinting List again\n");
-					traversor2 = rootclient;
-					while (traversor2 != NULL)
-					{
-						printf("\nTable: %d   %s\n", traversor2->pid, traversor2->pathname);
-						traversor2 = traversor2->nextclient;
-					}
 				}
 				//************************************************************************
 
@@ -259,59 +200,19 @@ int main(int argc, char *argv[])
 					//printf("Received buffer : %s", buff);
 					//Obtaining a shared memory key and sending it to the client
 					strcpy(remote_file, buff);
+					int pid = getpid();
+					printf("pid: %d\n", pid);
+					char * pid_char = (char *)malloc(sizeof(char) * 20);
+					sprintf(pid_char, "%d", pid);
+					strcat(pid_char, "$");
+					printf("Conversion in pid: %s\n",pid_char);
+					strcat(pids_mem, pid_char);
+					printf("PIDs: %s\n", pids_mem);
 
 					//Appending to the table
-					traversor = rootclient;
 					printf("\nThis is the client socket descriptor %d", client_conn);
 
-					if (traversor != 0) //moving the traversor to the end of list
-					{
-						while (traversor->nextclient != 0)
-							traversor = traversor->nextclient;
-					}
-
-					rootclient->pid = 300;
-					//creates a node at the end of list
-					table_count++;
-					printf("table count : %d\n", table_count);
-					/*rootclient = mremap(rootclient, ((table_count - 1) * sizeof(client)), (table_count * sizeof(client)), MREMAP_MAYMOVE);
-					if(rootclient == MAP_FAILED)
-					{
-						printf("errno: %d\n", errno);
-						printf("KEEP CALM\n");
-					}*/
-					traversor->nextclient = malloc(sizeof(client));
-					traversor = traversor->nextclient;
-
-					if (traversor == 0)
-					{
-						printf("Out of memory");
-						return 0;
-					}
-
-					//Initialising new memory
-
-					printf("\nPrinting the list 1\n");
-					traversor2 = rootclient;
-					while (traversor2 != NULL)
-					{
-						printf("\nTable : %d   %s\n", traversor2->pid, traversor2->pathname);
-						traversor2 = traversor2->nextclient;
-					}
-					traversor->pid = getpid();
-					traversor->pathname = remote_file;
-					traversor->nextclient = 0;
-
-					//printing the list
-					printf("\nPrinting the list 2\n");
-					traversor2 = rootclient;
-					while (traversor2 != NULL)
-					{
-						printf("\nTable : %d   %s\n", traversor2->pid, traversor2->pathname);
-						traversor2 = traversor2->nextclient;
-					}
-
-					//**************************************************
+					*table_count += 1;
 
 					int sh_mem_key = ftok(remote_file, 1);
 					char buffer[buff_size];
@@ -360,25 +261,42 @@ int main(int argc, char *argv[])
 
 				if(update_cycles == 1)
 				{
-					//updating clients
-					//********************************************************************************
-					//loop through the linked list to find the clients with same file
-					//char update[] = "U$";
-					traversor2 = rootclient;
-
-					while (traversor2 != NULL)
+					//updating clients by using kill
+					update_cycles--;
+					char *temp_pids;
+					char** tokens;
+					char pids_arr[MAX_CLIENTS];
+					bzero(pids_arr, strlen(pids_arr) + 1);
+					int i;
+					printf("PIDS Mem: %s\n", pids_mem);
+					for(i = 0; i < strlen(pids_mem); i++)
 					{
-						if (strcmp(traversor2->pathname, remote_file) == 0)
-						{
-							printf("\nClients to update : %d   %s\n", traversor2->pid, traversor2->pathname);
-							//sending signal to update the corresponding client
-							kill(traversor2->pid, SIGUSR1);
-						}
-
-						traversor2 = traversor2->nextclient;
+						temp_pids = pids_mem + i;
+						char *str = (char *)malloc(sizeof(char) + 1);
+						bzero(str, strlen(str) + 1);
+						memmove(str, temp_pids, 1);
+						printf("char: %s\n", str);
+						pids_arr[i] = *str;
 					}
 
-					update_cycles--;
+					printf("pids_mem=[%s]\n\n", pids_mem);
+					printf("pids_arr %s\n", pids_arr);
+
+					tokens = splitting(pids_arr, '$');
+
+					if (tokens)
+					{
+						int i;
+						for (i = 0; *(tokens + i); i++)
+						{
+							printf("pid=[%s]\n", *(tokens + i));
+							int pid = atoi(*(tokens + i));
+							kill(pid,SIGUSR1);
+							free(*(tokens + i));
+						}
+						printf("\n");
+						free(tokens);
+					}
 					//write(client_conn, update, strlen(update));
 					//**************************************************************************************
 				}
@@ -393,10 +311,11 @@ int main(int argc, char *argv[])
 			//Terminating child process and closing socket
 			close(client_conn);
 			exit(0);
-
 			bzero(buff, buff_size);
 			update_cycles++;
 		}
+
+		waitpid(pid, &childstate, 0);
 
 		//parent process closing socket connection
 		close(client_conn);
@@ -412,7 +331,7 @@ client* DeleteClient(client* head, int socket_desc)
 		return NULL;
 
 	//checking to see if the current node is one to be deleted
-	if (head->pid == socket_desc)
+	if (*head->pid == socket_desc)
 	{
 		client* tempNextP = malloc(sizeof(client));
 
@@ -430,4 +349,47 @@ client* DeleteClient(client* head, int socket_desc)
 
 	//return the ptr to where we were called from. since we did not remove this node it will be the same
 	return head;
+}
+
+char** splitting(char* a_str, const char a_delim) {
+	char** result = 0;
+	size_t count = 0;
+	char* tmp = a_str;
+	char* last_comma = 0;
+	char delim[2];
+	delim[0] = a_delim;
+	delim[1] = 0;
+
+	/* Count how many elements will be extracted. */
+	while (*tmp) {
+		if (a_delim == *tmp) {
+			count++;
+			last_comma = tmp;
+		}
+		tmp++;
+	}
+
+	/* Add space for trailing token. */
+	count += last_comma < (a_str + strlen(a_str) - 1);
+
+	/* Add space for terminating null string so caller
+	 knows where the list of returned strings ends. */
+	count++;
+
+	result = malloc(sizeof(char*) * count);
+
+	if (result) {
+		size_t idx = 0;
+		char* token = strtok(a_str, delim);
+
+		while (token) {
+			assert(idx < count);
+			*(result + idx++) = strdup(token);
+			token = strtok(0, delim);
+		}
+		assert(idx == count - 1);
+		*(result + idx) = 0;
+	}
+
+	return result;
 }
