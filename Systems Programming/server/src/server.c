@@ -10,51 +10,95 @@
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <signal.h>
+#include <sys/mman.h>
+#include <sys/shm.h>
+#include <linux/mman.h>
+
+
 
 FILE * file_x = NULL;
-/*void sig_handler(int sig)
+char * SHMNAME = "shm";
+
+int client_conn;
+void sig_handler(int sig)
 {
-	printf("Closing any open files\n");
-	printf("%d\n", x);
-	fclose(file_x);
-	exit(1);
-}*/
+	printf("Writing to the socket pid: %d, signal: %d\n", getpid(), sig);
+	char * code = "$$!*!$$";
+	write(client_conn, code, strlen(code));
+}
 
 typedef struct client
 {
-	int sd; //sock decriptor
+	int pid; //pid
 	char *pathname;
 	struct client *nextclient;
 } client;
 
 //prototype
 client* DeleteClient(client* head, int id);
+void *mremap(void *old_address, size_t old_size, size_t new_size, int flags);
+
 
 int main(int argc, char *argv[])
 {
 	pid_t pid;
 	int buff_size = 1024;
 	char buff[buff_size];
-	int listen_fd, client_conn;
+	int listen_fd;
 	struct sockaddr_in serv_addr;
 	int server_port = 5001;
 	char remote_file[255];
 
-	int bytes_read, fd;
+	int bytes_read, fd, table_count = 1;
 	struct flock lock;
 
+
 	//**********************************************
-	client* rootclient;
+	static client* rootclient;
 	client* traversor;
+
+	shm_unlink("shm");
+	int shmfd = shm_open(SHMNAME,O_RDWR,0755);
+	if (shmfd < 0)
+	{
+		if (errno == 2)
+		{
+			shmfd = shm_open(SHMNAME, O_CREAT | O_RDWR, 0755);
+			if (shmfd < 0)
+			{
+				perror("Failure in shm_open()");
+				fprintf(stderr, "Error: %d\n", errno);
+				exit(EXIT_FAILURE);
+			}
+		}
+		else
+		{
+			perror("Failure in shm_open()");
+			fprintf(stderr, "Error: %d\n", errno);
+			exit(EXIT_FAILURE);
+		}
+	}
+	if(shmfd == -1)
+	{
+		perror("Failed to map shared memory");
+		return 0;
+	}
+
+	ftruncate(shmfd, sizeof(client));
+	rootclient = mmap(NULL, sizeof(client), PROT_READ | PROT_WRITE, MAP_SHARED ,shmfd , 0);
+
+	if(rootclient == MAP_FAILED)
+	{
+		printf("MMap failed xbiiijn\n");
+	}
 	client *traversor2; //for table traversing
 
 	rootclient = (client*) malloc(sizeof(client));
-	rootclient->sd = 0;
+	rootclient->pid = 0;
 	rootclient->pathname = "";
 	rootclient->nextclient = 0;
 	//*****************************************
 
-	//signal(SIGINT, sig_handler);
 	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 
 	if (listen_fd < 0)
@@ -98,6 +142,14 @@ int main(int argc, char *argv[])
 	{
 		//Accepting client connection
 		client_conn = accept(listen_fd, (struct sockaddr *) NULL, NULL);
+
+		printf("\nPrinting the list Parent!!! where count is : %d\n", table_count);
+		traversor2 = rootclient;
+		while (traversor2 != NULL)
+		{
+			printf("\nTable : %d   %s\n", traversor2->pid, traversor2->pathname);
+			traversor2 = traversor2->nextclient;
+		}
 		client++;
 		printf("connected clients: %d and connected socket descriptor: %d\n", client, client_conn);
 		if (client_conn < 0)
@@ -108,6 +160,7 @@ int main(int argc, char *argv[])
 
 		if((pid = fork()) == 0)
 		{
+			signal(SIGUSR1, sig_handler);
 			int update_cycles = 0;
 			int first_pass = 1;
 			//Child process closes listening socket
@@ -134,9 +187,9 @@ int main(int argc, char *argv[])
 					//printing again
 					printf("\nPrinting List again\n");
 					traversor2 = rootclient;
-					while (traversor2 != NULL) {
-						printf("\nTable: %d   %s\n", traversor2->sd,
-								traversor2->pathname);
+					while (traversor2 != NULL)
+					{
+						printf("\nTable: %d   %s\n", traversor2->pid, traversor2->pathname);
 						traversor2 = traversor2->nextclient;
 					}
 				}
@@ -156,7 +209,6 @@ int main(int argc, char *argv[])
 					//write all the contents received by the client
 					if(buff[0] == 'U')
 					{
-						printf("Updating..\n");
 						token = strtok(buff_cpy, "$");
 						token = strtok(NULL, "$");
 						token_size = strlen(token);
@@ -192,7 +244,6 @@ int main(int argc, char *argv[])
 						//removing flags for first pass
 						if(first_pass)
 						{
-							printf("writing in first pass : %s\n", buff);
 							fwrite(buff + (3 + token_size) , sizeof(char), strlen(buff) - (3 + token_size), file_x);
 						}
 						else
@@ -209,7 +260,7 @@ int main(int argc, char *argv[])
 					//Obtaining a shared memory key and sending it to the client
 					strcpy(remote_file, buff);
 
-					//New code
+					//Appending to the table
 					traversor = rootclient;
 					printf("\nThis is the client socket descriptor %d", client_conn);
 
@@ -219,7 +270,16 @@ int main(int argc, char *argv[])
 							traversor = traversor->nextclient;
 					}
 
+					rootclient->pid = 300;
 					//creates a node at the end of list
+					table_count++;
+					printf("table count : %d\n", table_count);
+					/*rootclient = mremap(rootclient, ((table_count - 1) * sizeof(client)), (table_count * sizeof(client)), MREMAP_MAYMOVE);
+					if(rootclient == MAP_FAILED)
+					{
+						printf("errno: %d\n", errno);
+						printf("KEEP CALM\n");
+					}*/
 					traversor->nextclient = malloc(sizeof(client));
 					traversor = traversor->nextclient;
 
@@ -230,15 +290,24 @@ int main(int argc, char *argv[])
 					}
 
 					//Initialising new memory
-					traversor->sd = client_conn;
+
+					printf("\nPrinting the list 1\n");
+					traversor2 = rootclient;
+					while (traversor2 != NULL)
+					{
+						printf("\nTable : %d   %s\n", traversor2->pid, traversor2->pathname);
+						traversor2 = traversor2->nextclient;
+					}
+					traversor->pid = getpid();
 					traversor->pathname = remote_file;
 					traversor->nextclient = 0;
 
 					//printing the list
+					printf("\nPrinting the list 2\n");
 					traversor2 = rootclient;
 					while (traversor2 != NULL)
 					{
-						printf("\nTable : %d   %s\n", traversor2->sd, traversor2->pathname);
+						printf("\nTable : %d   %s\n", traversor2->pid, traversor2->pathname);
 						traversor2 = traversor2->nextclient;
 					}
 
@@ -294,14 +363,17 @@ int main(int argc, char *argv[])
 					//updating clients
 					//********************************************************************************
 					//loop through the linked list to find the clients with same file
-					char update[] = "U$";
-					printf("\nThis is the update string ; %s\n", update);
+					//char update[] = "U$";
 					traversor2 = rootclient;
 
 					while (traversor2 != NULL)
 					{
 						if (strcmp(traversor2->pathname, remote_file) == 0)
-							printf("\nClients to update : %d   %s\n", traversor2->sd, traversor2->pathname);
+						{
+							printf("\nClients to update : %d   %s\n", traversor2->pid, traversor2->pathname);
+							//sending signal to update the corresponding client
+							kill(traversor2->pid, SIGUSR1);
+						}
 
 						traversor2 = traversor2->nextclient;
 					}
@@ -340,7 +412,7 @@ client* DeleteClient(client* head, int socket_desc)
 		return NULL;
 
 	//checking to see if the current node is one to be deleted
-	if (head->sd == socket_desc)
+	if (head->pid == socket_desc)
 	{
 		client* tempNextP = malloc(sizeof(client));
 
