@@ -27,6 +27,7 @@ struct address
 
 //prototypes
 void *mremap(void *old_address, size_t old_size, size_t new_size, int flags);
+int strRemoveAll(char *src,char *key);
 typedef struct address address_t;
 
 //mutex variables for handling synchronisation
@@ -76,7 +77,7 @@ void *rmmap(fileloc_t location, off_t offset)
 	if (server == NULL )
 	{
 		fprintf(stderr, "Authentication failed...\n");
-		exit(0);
+		exit(1);
 	}
 
 	// Populate serv_addr structure
@@ -144,7 +145,21 @@ void *rmmap(fileloc_t location, off_t offset)
 
 		if(strstr(buffer,update) != NULL)
 		{
-			rmmap(location, offset);
+			char *buffer_temp;
+			char array[1024];
+			bzero(array, strlen(array) + 1);
+			int i;
+			for(i = 0; i < strlen(buffer); i++)
+			{
+				buffer_temp = buffer + i;
+				char *str = (char *)malloc(sizeof(char) + 1);
+				bzero(str, strlen(str) + 1);
+				memmove(str, buffer_temp, 1);
+				array[i] = *str;
+			}
+
+			while(strRemoveAll(buffer_temp, update));
+			return rmmap(location, offset);
 		}
 
 		if(sub_buff_len > 1)
@@ -258,7 +273,6 @@ ssize_t mread(void *addr, off_t offset, void *buff, size_t count)
 
 	if(code_read > 0 && strcmp(update_code, update))
 	{
-		printf("We received the code to update in the read function\n");
 		//update code was received in order to perform an update on the mapped memory
 		file_mapped->memory_address = rmmap(temp_file_mapped, file_mapped_off);
 	}
@@ -272,7 +286,6 @@ ssize_t mread(void *addr, off_t offset, void *buff, size_t count)
 	}
 
 	bzero(buff, count * sizeof(char));
-	printf("\nSize of Buffer %lu\n ", sizeof(*buff) * count);
 
 	return count;
 }
@@ -292,7 +305,6 @@ ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 	int code_read = read(sockfd, update_code, strlen(update_code));
 	if(code_read > 0 && strcmp(update_code, update))
 	{
-		printf("We received the code to update\n");
 		//update code was received in order to perform an update on the mapped memory
 		file_mapped->memory_address = rmmap(temp_file_mapped, file_mapped_off);
 	}
@@ -335,7 +347,7 @@ ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 		{
 			perror("Semaphore was not created");
 			sem_unlink(SEM_NAME); //unlink semaphore
-			exit(-1);
+			exit(1);
 		}
 		sem_wait(mutex);
 		addr = mremap(addr, mem_size, (mem_range + 1), MREMAP_MAYMOVE);
@@ -379,7 +391,23 @@ ssize_t mwrite(void *addr, off_t offset, void *buff, size_t count)
 	char code[7] = "       ";
 	sleep(1);
 	read(sockfd, code, strlen(code));
-	printf("Buffer read after mwrite : %s\n", code);
 	return written_mem;
+}
+
+int strRemoveAll(char *src,char *key)
+{
+  while( *src )
+  {
+    char *k=key,*s=src;
+    while( *k && *k==*s ) ++k,++s;
+    if( !*k )
+    {
+      while( *s ) *src++=*s++;
+      *src=0;
+      return 1;
+    }
+    ++src;
+  }
+  return 0;
 }
 

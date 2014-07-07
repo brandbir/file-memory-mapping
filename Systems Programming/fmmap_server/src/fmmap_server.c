@@ -23,7 +23,6 @@ int MAX_CLIENTS = 100;
 int client_conn;
 void sig_handler(int sig)
 {
-	printf("Writing to the socket pid: %d, signal: %d\n", getpid(), sig);
 	char * code = "$$!*!$$";
 	write(client_conn, code, strlen(code));
 }
@@ -52,11 +51,15 @@ int main(int argc, char *argv[])
 	int bytes_read, fd;
 	struct flock lock;
 	int server_port;
-
-	if(strlen(argv) != 1)
-		perror("Invalid number of arguments, please insert port number\n");
+	if(argc != 2)
+	{
+		printf("Invalid number of arguments, please insert port number\n");
+		exit(EXIT_FAILURE);
+	}
 	else
-		 server_port = atoi(argv[0]);
+	{
+		 server_port = atoi(argv[1]);
+	}
 
 	char *pids_mem = mmap(NULL, MAX_CLIENTS * sizeof(char), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -95,20 +98,15 @@ int main(int argc, char *argv[])
 	// Start listening for theait clients, here process will
 	// go in sleep mode and will wait for the incoming connection
 	listen(listen_fd, 5);
-	printf("Process %d is waiting for a connection...\n", getpid());
+	printf("Server is waiting for a connection...\n");
 
 	int client = 0;
 
 	while(1)
 	{
-		//listen(listen_fd, 5);
-		//Accepting client connection
-		printf("Before Connection\n");
 		client_conn = accept(listen_fd, (struct sockaddr *) NULL, NULL);
-		printf("After Connection\n");
 
 		client++;
-		printf("connected clients: %d and connected socket descriptor: %d\n", client, client_conn);
 		if (client_conn < 0)
 		{
 			perror("Client was not accepted...");
@@ -126,20 +124,12 @@ int main(int argc, char *argv[])
 
 			while((bytes_read = read(client_conn, buff, buff_size)) > 0)
 			{
-				//printf("LOOP: Buffer received: %s\n\n\n", buff);
 				if (bytes_read < 0)
 				{
 					perror("No data was read from the client");
 					exit(1);
 				}
 				
-				//************************************************************************
-
-				if (buff[0] == 'R')
-				{
-					//deleting client's table entry
-				}
-				//************************************************************************
 
 				//Holding a copy of the actual buffer
 				char *buff_cpy = (char *)malloc(strlen(buff) + 1);
@@ -202,20 +192,13 @@ int main(int argc, char *argv[])
 				}
 				else
 				{
-					//printf("Received buffer : %s", buff);
 					//Obtaining a shared memory key and sending it to the client
 					strcpy(remote_file, buff);
 					int pid = getpid();
-					printf("pid: %d\n", pid);
 					char * pid_char = (char *)malloc(sizeof(char) * 20);
 					sprintf(pid_char, "%d", pid);
 					strcat(pid_char, "$");
-					printf("Conversion in pid: %s\n",pid_char);
 					strcat(pids_mem, pid_char);
-					printf("PIDs: %s\n", pids_mem);
-
-					//Appending to the table
-					printf("\nThis is the client socket descriptor %d", client_conn);
 
 					int sh_mem_key = ftok(remote_file, 1);
 					char buffer[buff_size];
@@ -271,19 +254,15 @@ int main(int argc, char *argv[])
 					char pids_arr[MAX_CLIENTS];
 					bzero(pids_arr, strlen(pids_arr) + 1);
 					int i;
-					printf("PIDS Mem: %s\n", pids_mem);
+
 					for(i = 0; i < strlen(pids_mem); i++)
 					{
 						temp_pids = pids_mem + i;
 						char *str = (char *)malloc(sizeof(char) + 1);
 						bzero(str, strlen(str) + 1);
 						memmove(str, temp_pids, 1);
-						printf("char: %s\n", str);
 						pids_arr[i] = *str;
 					}
-
-					printf("pids_mem=[%s]\n\n", pids_mem);
-					printf("pids_arr %s\n", pids_arr);
 
 					tokens = splitting(pids_arr, '$');
 
@@ -292,16 +271,12 @@ int main(int argc, char *argv[])
 						int i;
 						for (i = 0; *(tokens + i); i++)
 						{
-							printf("pid=[%s]\n", *(tokens + i));
 							int pid = atoi(*(tokens + i));
 							kill(pid,SIGUSR1);
 							free(*(tokens + i));
 						}
-						printf("\n");
 						free(tokens);
 					}
-					//write(client_conn, update, strlen(update));
-					//**************************************************************************************
 				}
 
 				else if(update_cycles != 0)
@@ -314,7 +289,7 @@ int main(int argc, char *argv[])
 			//Terminating child process and closing socket
 			close(client_conn);
 			printf("Closing client connection!\n");
-			exit(0);
+			exit(1);
 			bzero(buff, buff_size);
 			update_cycles++;
 		}

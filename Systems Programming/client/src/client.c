@@ -11,11 +11,21 @@
 
 #define IP "127.0.0.1"
 
-#define PORT 5001
+int PORT;
 #define FILENAME "file.txt"
 
 int main(int argc, char *argv[])
 {
+	if(argc != 2)
+	{
+		printf("Invalid number of arguments, please insert port number\n");
+		exit(EXIT_FAILURE);
+	}
+	else
+	{
+		 PORT = atoi(argv[1]);
+	}
+
 	printf("Client %d Running\n", getpid());
 	char *buff = NULL;
 	struct in_addr server_addr;
