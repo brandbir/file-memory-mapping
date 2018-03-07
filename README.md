@@ -1,4 +1,1 @@
-uom
-===
-
-University of Malta Repository
+Remote file memory mapping implemented in C.
